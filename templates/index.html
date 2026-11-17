@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17212e">
+  <meta name="description" content="Visualizador local de linhas, ônibus, paradas e previsões da API Olho Vivo da SPTrans.">
+  <title>SPTrans · Olho na cidade</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='demo-data.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+  <svg class="svg-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="i-bus" viewBox="0 0 24 24"><path d="M6 17v3m12-3v3M5 11h14M7 15h.01M17 15h.01M7 3h10a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="m3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2Zm6-2v16m6-14v16"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 11-8 11S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v7a5 5 0 0 0 5 5h5M18 17V10a5 5 0 0 0-5-5h-3"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5m-4-4a8 8 0 0 1 13-3l2 3M4 16l2 3a8 8 0 0 0 13-3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+  </defs></svg>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="SPTrans — página inicial"><span class="brand-icon"><svg><use href="#i-bus"/></svg></span><span>SPTrans<small>OLHO NA CIDADE</small></span></a>
+      <p class="nav-caption">EXPLORAR A CIDADE</p>
+      <nav aria-label="Navegação principal">
+        <button type="button" class="nav-item active" data-view="monitor" aria-current="page"><svg><use href="#i-map"/></svg>Monitoramento</button>
+        <button type="button" class="nav-item" data-view="stops"><svg><use href="#i-pin"/></svg>Paradas e previsões</button>
+        <button type="button" class="nav-item" data-view="corridors"><svg><use href="#i-route"/></svg>Corredores</button>
+        <button type="button" class="nav-item" data-view="explorer"><svg><use href="#i-code"/></svg>Explorar a API</button>
+      </nav>
+      <div class="sidebar-bottom"><div class="city-lines" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div><p>São Paulo em movimento.</p><small>Dados da API Olho Vivo.<br>Visualizador independente, executado no seu computador.</small><a href="https://www.sptrans.com.br/desenvolvedores/api-do-olho-vivo-guia-de-referencia/documentacao-api/" target="_blank" rel="noopener noreferrer">Documentação da SPTrans ↗</a></div>
+    </aside>
+    <main>
+      <header class="page-header"><div><div class="eyebrow">MOBILIDADE URBANA / SÃO PAULO</div><h1 id="page-title">Uma cidade. Milhares de caminhos.</h1><p id="page-subtitle">Acompanhe os ônibus e explore os dados do transporte público.</p></div><div class="connection"><span class="status-pill" id="connection-status"><i></i>Conectando à API</span><button type="button" id="mode-button" class="text-button">Ver demonstração</button></div></header>
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+      <section id="demo-banner" class="demo-banner" hidden><strong>Modo demonstração</strong><span>Posições e horários fictícios para explorar a interface. Nenhum dado ao vivo.</span></section>
+
+      <section id="view-monitor" class="view-panel">
+        <div class="search-panel"><form id="line-search-form" class="search-form"><label class="sr-only" for="line-search">Número ou nome da linha</label><svg><use href="#i-search"/></svg><input id="line-search" name="q" type="search" placeholder="Qual linha você quer acompanhar? Ex.: 8000 ou Lapa" autocomplete="off" required maxlength="100"><button type="submit" class="button primary">Buscar linha <span aria-hidden="true">→</span></button></form><button type="button" id="all-lines" class="button secondary">Ver toda a cidade</button></div>
+        <div id="line-results" class="result-list" aria-live="polite" hidden></div>
+        <div class="selection-bar" id="line-selection" hidden><span id="line-selection-text"></span><button type="button" id="selected-line-stops" class="text-button">Ver paradas desta linha →</button></div>
+        <div class="stats-grid">
+          <article class="stat-card"><div><span>VEÍCULOS LOCALIZADOS</span><strong id="stat-vehicles">—</strong><small>na consulta atual</small></div><span class="stat-icon red"><svg><use href="#i-bus"/></svg></span></article>
+          <article class="stat-card"><div><span>LINHAS / SENTIDOS</span><strong id="stat-lines">—</strong><small>com veículos retornados</small></div><span class="stat-icon blue"><svg><use href="#i-route"/></svg></span></article>
+          <article class="stat-card"><div><span>ACESSIBILIDADE</span><strong id="stat-accessible">—</strong><small>veículos com indicação acessível</small></div><span class="stat-letter green" aria-hidden="true">♿</span></article>
+          <article class="stat-card"><div><span>HORÁRIO DA API</span><strong id="stat-time">—</strong><small id="updated-at">aguardando consulta</small></div><span class="stat-icon amber"><svg><use href="#i-clock"/></svg></span></article>
+        </div>
+        <section class="workspace-card">
+          <div class="card-header"><div><h2>Ônibus no mapa <span class="small-badge" id="scope-badge">Toda a cidade</span></h2><p>Últimas posições disponibilizadas pela SPTrans</p></div><div class="toolbar"><label class="auto-refresh"><input type="checkbox" id="auto-refresh">Atualizar a cada 30 s</label><button type="button" id="refresh-positions" class="button icon-button" aria-label="Atualizar posições" title="Atualizar posições"><svg><use href="#i-refresh"/></svg></button><div class="segmented" aria-label="Visualização"><button type="button" id="show-map" class="active" aria-pressed="true">Mapa</button><button type="button" id="show-table" aria-pressed="false">Tabela</button></div></div></div>
+          <div id="map-wrapper" class="map-wrapper"><div id="vehicle-map" class="map" aria-label="Mapa de localização dos ônibus"></div><div id="map-fallback" class="map-fallback" hidden><svg><use href="#i-map"/></svg><h3>O mapa não pôde ser carregado</h3><p>Verifique sua conexão ou use a tabela para consultar as posições e coordenadas.</p><button type="button" id="fallback-table" class="button primary">Abrir tabela</button></div><div class="map-caption"><span class="legend-dot"></span>Ônibus <span class="legend-dot stop"></span>Parada selecionada <span class="map-caption-end">Arraste para explorar · clique em um veículo</span></div></div>
+          <div id="vehicle-table-wrapper" class="table-wrapper" hidden><table><thead><tr><th>Linha</th><th>Destino</th><th>Veículo</th><th>Acessível</th><th>Posição capturada</th><th>Latitude</th><th>Longitude</th></tr></thead><tbody id="vehicle-table-body"><tr><td colspan="7" class="empty-cell">Faça uma consulta para visualizar os veículos.</td></tr></tbody></table><p id="table-count" class="table-count"></p></div>
+          <div class="card-footer"><span id="positions-description">As posições aparecem após a conexão com a API.</span><div><button type="button" id="export-csv" class="text-button" disabled><svg><use href="#i-download"/></svg>CSV</button><button type="button" id="export-json" class="text-button" disabled><svg><use href="#i-download"/></svg>JSON</button></div></div>
+        </section>
+        <p class="footnote">A posição informada é a última transmitida pelo veículo. A API pode ter atrasos e retornos vazios.</p>
+      </section>
+
+      <section id="view-stops" class="view-panel" hidden>
+        <div class="section-intro"><span class="section-kicker">SEU PRÓXIMO EMBARQUE</span><h2>Encontre uma parada.</h2><p>Busque pelo nome ou endereço e consulte as previsões de chegada.</p></div>
+        <div class="search-panel"><form id="stop-search-form" class="search-form"><label class="sr-only" for="stop-search">Nome ou endereço da parada</label><svg><use href="#i-search"/></svg><input id="stop-search" type="search" placeholder="Ex.: Afonso Braz, Paulista ou endereço" maxlength="100" required><button type="submit" class="button primary">Buscar paradas →</button></form></div>
+        <p class="muted" id="stops-context">A cobertura de paradas depende dos dados disponibilizados pela SPTrans e pode se concentrar nos corredores.</p>
+        <div id="stop-results" class="stop-grid"><div class="empty-state"><svg><use href="#i-pin"/></svg><h3>O caminho começa por uma parada.</h3><p>Pesquise acima ou selecione as paradas de uma linha ou corredor.</p></div></div>
+        <section id="arrival-panel" class="workspace-card arrival-panel" hidden tabindex="-1"><div class="card-header"><div><div class="eyebrow">PREVISÕES DE CHEGADA</div><h2 id="arrival-title"></h2><p id="arrival-reference"></p></div><button type="button" id="close-arrivals" class="button secondary">Fechar</button></div><div id="arrival-content"></div><div class="card-footer">Horários estimados pela API, sujeitos às condições do trânsito.</div></section>
+      </section>
+
+      <section id="view-corridors" class="view-panel" hidden><div class="section-intro"><span class="section-kicker">CONEXÕES PELA CIDADE</span><h2>Corredores de ônibus.</h2><p>Explore os corredores cadastrados e suas paradas.</p></div><div class="section-actions"><button type="button" id="refresh-corridors" class="button secondary"><svg><use href="#i-refresh"/></svg>Atualizar corredores</button></div><div id="corridor-results" class="corridor-grid"></div></section>
+
+      <section id="view-explorer" class="view-panel" hidden><div class="section-intro"><span class="section-kicker">OS DADOS, DE PERTO</span><h2>Explore a API Olho Vivo.</h2><p>Consulte os recursos disponíveis e visualize a resposta JSON original.</p></div><section class="workspace-card explorer-card"><form id="explorer-form"><div class="field"><label for="explorer-resource">Recurso</label><select id="explorer-resource"><option value="positions">Posições dos veículos</option><option value="lines">Buscar linhas</option><option value="stops">Buscar paradas</option><option value="arrivals">Previsões de chegada</option><option value="corridors">Corredores</option><option value="companies">Empresas operadoras</option><option value="garages">Veículos em garagens</option><option value="speed">Velocidades nas vias</option></select></div><div id="explorer-fields" class="explorer-fields"></div><button type="submit" class="button primary">Consultar recurso →</button></form><div class="json-toolbar"><code id="explorer-path">Selecione um recurso e consulte.</code><button type="button" id="export-explorer" class="text-button" disabled><svg><use href="#i-download"/></svg>Baixar JSON</button></div><pre id="explorer-output" tabindex="0">A resposta da consulta aparecerá aqui.</pre></section><p class="footnote">Códigos internos de linha, parada, corredor e empresa podem ser obtidos nas respectivas consultas. A disponibilidade de cada recurso depende da SPTrans.</p></section>
+      <footer class="page-footer"><span><strong>SPTrans</strong> / Olho na cidade</span><span>Uma janela para o transporte de São Paulo.</span></footer>
+    </main>
+  </div>
+</body>
+</html>
